@@ -1,0 +1,39 @@
+name: Build Raya APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Extract Raya project
+        run: |
+          unzip -o Raya-Android-Voice-Assistant.zip -d raya-project
+          find raya-project -maxdepth 3 -type f | head -100
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build APK
+        working-directory: raya-project
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Raya-debug-APK
+          path: raya-project/**/build/outputs/apk/**/*.apk
+          
