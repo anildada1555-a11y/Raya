@@ -16,8 +16,17 @@ jobs:
 
       - name: Extract Raya project
         run: |
+          rm -rf raya-project
+          mkdir raya-project
           unzip -o Raya-Android-Voice-Assistant.zip -d raya-project
-          find raya-project -maxdepth 3 -type f | head -100
+
+          echo "===== PROJECT STRUCTURE ====="
+          find raya-project -maxdepth 4 -type f | sort
+
+      - name: Find Android project
+        run: |
+          echo "===== SEARCHING FOR GRADLE FILES ====="
+          find raya-project -type f \( -name "gradlew" -o -name "build.gradle.kts" -o -name "settings.gradle.kts" \) -print
 
       - name: Set up JDK
         uses: actions/setup-java@v5
@@ -25,15 +34,28 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Build APK
-        working-directory: raya-project
+      - name: Check project
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+          echo "PROJECT_DIR=$PROJECT_DIR"
+          ls -la "$PROJECT_DIR"
+
+      - name: Build APK
+        run: |
+          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+          cd "$PROJECT_DIR"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug
+          else
+            echo "ERROR: gradlew is missing from the Android project."
+            echo "The project may need a Gradle wrapper or a different build method."
+            exit 1
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
         with:
           name: Raya-debug-APK
           path: raya-project/**/build/outputs/apk/**/*.apk
-          
