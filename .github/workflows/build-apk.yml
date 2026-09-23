@@ -108,7 +108,23 @@ jobs:
 
           echo "Android resources:"
           find "$RES" -maxdepth 2 -type f | sort
+      - name: Create missing string resources
+        run: |
+          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+          RES="$PROJECT_DIR/app/src/main/res"
 
+          mkdir -p "$RES/values"
+
+          cat > "$RES/values/strings.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">Raya</string>
+              <string name="accessibility_service_summary">Raya Accessibility Service</string>
+          </resources>
+          EOF
+
+          echo "Created strings.xml:"
+          cat "$RES/values/strings.xml"
       - name: Build APK
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
