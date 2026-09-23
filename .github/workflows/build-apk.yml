@@ -36,7 +36,24 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.10'
+      - name: Show Gradle configuration
+        run: |
+          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
 
+          echo "===== ROOT BUILD ====="
+          cat "$PROJECT_DIR/build.gradle.kts"
+
+          echo "===== APP BUILD ====="
+          cat "$PROJECT_DIR/app/build.gradle.kts"
+
+          echo "===== SETTINGS ====="
+          cat "$PROJECT_DIR/settings.gradle.kts"
+
+          echo "===== LIBS REFERENCES ====="
+          grep -R "libs\." -n "$PROJECT_DIR" --include="*.gradle.kts" || true
+
+          echo "===== GRADLE FOLDER ====="
+          find "$PROJECT_DIR/gradle" -maxdepth 2 -type f -print 2>/dev/null || true
       - name: Build APK
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
