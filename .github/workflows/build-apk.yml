@@ -54,6 +54,27 @@ jobs:
 
           echo "===== GRADLE FOLDER ====="
           find "$PROJECT_DIR/gradle" -maxdepth 2 -type f -print 2>/dev/null || true
+               find "$PROJECT_DIR/gradle" -maxdepth 2 -type f -print 2>/dev/null || true
+
+      - name: Fix missing Gradle version catalog
+        run: |
+          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+
+          mkdir -p "$PROJECT_DIR/gradle"
+
+          cat > "$PROJECT_DIR/gradle/libs.versions.toml" <<'EOF'
+          [versions]
+          agp = "8.7.3"
+          kotlin = "1.9.24"
+
+          [plugins]
+          android-application = { id = "com.android.application", version.ref = "agp" }
+          kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+          EOF
+
+          echo "Created:"
+          cat "$PROJECT_DIR/gradle/libs.versions.toml"
+
       - name: Build APK
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
