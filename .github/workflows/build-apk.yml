@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v6
 
@@ -36,27 +37,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.10'
-      - name: Show Gradle configuration
-        run: |
-          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
 
-          echo "===== ROOT BUILD ====="
-          cat "$PROJECT_DIR/build.gradle.kts"
-
-          echo "===== APP BUILD ====="
-          cat "$PROJECT_DIR/app/build.gradle.kts"
-
-          echo "===== SETTINGS ====="
-          cat "$PROJECT_DIR/settings.gradle.kts"
-
-          echo "===== LIBS REFERENCES ====="
-          grep -R "libs\." -n "$PROJECT_DIR" --include="*.gradle.kts" || true
-
-          echo "===== GRADLE FOLDER ====="
-          find "$PROJECT_DIR/gradle" -maxdepth 2 -type f -print 2>/dev/null || true
-               find "$PROJECT_DIR/gradle" -maxdepth 2 -type f -print 2>/dev/null || true
-
-      - name: Fix missing Gradle version catalog
+      - name: Create Gradle version catalog
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
 
@@ -72,17 +54,68 @@ jobs:
           kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
           EOF
 
-          echo "Created:"
-          cat "$PROJECT_DIR/gradle/libs.versions.toml"
       - name: Enable AndroidX
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
-          echo "android.useAndroidX=true" > "$PROJECT_DIR/gradle.properties"
+
+          cat > "$PROJECT_DIR/gradle.properties" <<'EOF'
+          android.useAndroidX=true
+          android.enableJetifier=true
+          EOF
+
+      - name: Create missing Android resources
+        run: |
+          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+          RES="$PROJECT_DIR/app/src/main/res"
+
+          mkdir -p "$RES/values"
+          mkdir -p "$RES/mipmap"
+
+          if ! grep -Rqs "name=\"Theme.RayaVoiceAssistant\"" "$RES"; then
+            cat > "$RES/values/styles.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.RayaVoiceAssistant" parent="android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:windowLightStatusBar">true</item>
+                  <item name="android:colorAccent">#6750A4</item>
+              </style>
+          </resources>
+          EOF
+          fi
+
+          if [ ! -f "$RES/mipmap/ic_launcher.xml" ]; then
+            cat > "$RES/mipmap/ic_launcher.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#6750A4"
+                  android:pathData="M54,8 A46,46 0,1 0,54 100 A46,46 0,1 0,54 8" />
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M42,38 L42,70 L72,54 Z" />
+          </vector>
+          EOF
+          fi
+
+          if [ ! -f "$RES/mipmap/ic_launcher_round.xml" ]; then
+            cp "$RES/mipmap/ic_launcher.xml" "$RES/mipmap/ic_launcher_round.xml"
+          fi
+
+          echo "Android resources:"
+          find "$RES" -maxdepth 2 -type f | sort
+
       - name: Build APK
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
           cd "$PROJECT_DIR"
-          gradle assembleDebug
+
+          echo "Building Raya..."
+          gradle clean assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
