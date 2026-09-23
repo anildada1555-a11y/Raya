@@ -74,7 +74,10 @@ jobs:
 
           echo "Created:"
           cat "$PROJECT_DIR/gradle/libs.versions.toml"
-
+      - name: Enable AndroidX
+        run: |
+          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+          echo "android.useAndroidX=true" > "$PROJECT_DIR/gradle.properties"
       - name: Build APK
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
