@@ -256,7 +256,28 @@ jobs:
 
           echo "===== MANIFEST ====="
           cat "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+      # 12. Fix JVM target compatibility
+      - name: Fix JVM target compatibility
+        run: |
+          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+          APP_BUILD="$PROJECT_DIR/app/build.gradle.kts"
 
+          cat >> "$APP_BUILD" <<'EOF'
+
+          android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          EOF
+
+          echo "JVM target fixed:"
+          tail -30 "$APP_BUILD"
       # 12. Build APK
       - name: Build APK
         run: |
