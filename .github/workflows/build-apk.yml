@@ -12,32 +12,50 @@ jobs:
 
     steps:
 
+      # 1. Download repository
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      # 2. Extract Raya ZIP
       - name: Extract Raya project
         run: |
           rm -rf raya-project
           mkdir raya-project
+
           unzip -o Raya-Android-Voice-Assistant.zip -d raya-project
 
+          echo "Extracted files:"
+          find raya-project -maxdepth 3 -type f | sort | head -200
+
+      # 3. Setup Java
       - name: Set up Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
+      # 4. Find Android project
       - name: Find Android project
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
-          echo "PROJECT_DIR=$PROJECT_DIR"
-          ls -la "$PROJECT_DIR"
 
+          echo "PROJECT_DIR=$PROJECT_DIR"
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android project not found"
+            exit 1
+          fi
+
+          ls -la "$PROJECT_DIR"
+          ls -la "$PROJECT_DIR/app"
+
+      # 5. Setup Gradle
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.10'
 
+      # 6. Create missing Gradle version catalog
       - name: Create Gradle version catalog
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
@@ -54,37 +72,82 @@ jobs:
           kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
           EOF
 
-      - name: Enable AndroidX
+          echo "Created Gradle version catalog:"
+          cat "$PROJECT_DIR/gradle/libs.versions.toml"
+
+      # 7. Configure AndroidX and Gradle memory
+      - name: Configure AndroidX and Gradle memory
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
 
           cat > "$PROJECT_DIR/gradle.properties" <<'EOF'
           android.useAndroidX=true
           android.enableJetifier=true
+
+          org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8
+          org.gradle.parallel=false
+          org.gradle.workers.max=2
+
+          kotlin.daemon.jvmargs=-Xmx1024m
           EOF
 
+          echo "Gradle properties:"
+          cat "$PROJECT_DIR/gradle.properties"
+
+      # 8. Remove old package attribute from AndroidManifest
+      - name: Fix AndroidManifest namespace
+        run: |
+          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+
+          MANIFEST="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+
+          if [ -f "$MANIFEST" ]; then
+            echo "AndroidManifest before fix:"
+            head -30 "$MANIFEST"
+
+            sed -i 's/ package="com\.raya\.assistant"//g' "$MANIFEST"
+
+            echo "AndroidManifest after fix:"
+            head -30 "$MANIFEST"
+          else
+            echo "ERROR: AndroidManifest.xml not found"
+            exit 1
+          fi
+
+      # 9. Create missing Android resources
       - name: Create missing Android resources
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+
           RES="$PROJECT_DIR/app/src/main/res"
 
           mkdir -p "$RES/values"
           mkdir -p "$RES/mipmap"
 
-          if ! grep -Rqs "name=\"Theme.RayaVoiceAssistant\"" "$RES"; then
+          # Create Theme if missing
+          if ! grep -Rqs 'name="Theme.RayaVoiceAssistant"' "$RES"; then
+
             cat > "$RES/values/styles.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-              <style name="Theme.RayaVoiceAssistant" parent="android:style/Theme.Material.Light.NoActionBar">
+
+              <style name="Theme.RayaVoiceAssistant"
+                  parent="android:style/Theme.Material.Light.NoActionBar">
+
                   <item name="android:fontFamily">sans</item>
                   <item name="android:windowLightStatusBar">true</item>
                   <item name="android:colorAccent">#6750A4</item>
+
               </style>
+
           </resources>
           EOF
+
           fi
 
+          # Create launcher icon if missing
           if [ ! -f "$RES/mipmap/ic_launcher.xml" ]; then
+
             cat > "$RES/mipmap/ic_launcher.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -92,49 +155,126 @@ jobs:
               android:height="108dp"
               android:viewportWidth="108"
               android:viewportHeight="108">
+
               <path
                   android:fillColor="#6750A4"
                   android:pathData="M54,8 A46,46 0,1 0,54 100 A46,46 0,1 0,54 8" />
+
               <path
                   android:fillColor="#FFFFFF"
                   android:pathData="M42,38 L42,70 L72,54 Z" />
+
           </vector>
           EOF
+
           fi
 
+          # Create round launcher icon if missing
           if [ ! -f "$RES/mipmap/ic_launcher_round.xml" ]; then
-            cp "$RES/mipmap/ic_launcher.xml" "$RES/mipmap/ic_launcher_round.xml"
+            cp "$RES/mipmap/ic_launcher.xml" \
+               "$RES/mipmap/ic_launcher_round.xml"
           fi
 
           echo "Android resources:"
           find "$RES" -maxdepth 2 -type f | sort
+
+      # 10. Create required strings
       - name: Create missing string resources
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+
           RES="$PROJECT_DIR/app/src/main/res"
+          STRINGS="$RES/values/strings.xml"
 
           mkdir -p "$RES/values"
 
-          cat > "$RES/values/strings.xml" <<'EOF'
+          if [ ! -f "$STRINGS" ]; then
+
+            cat > "$STRINGS" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
+
               <string name="app_name">Raya</string>
               <string name="accessibility_service_summary">Raya Accessibility Service</string>
+              <string name="accessibility_service_desc">Allows Raya to control Android apps using accessibility actions.</string>
+
           </resources>
           EOF
 
-          echo "Created strings.xml:"
-          cat "$RES/values/strings.xml"
+          else
+
+            python3 - "$STRINGS" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          path = sys.argv[1]
+
+          tree = ET.parse(path)
+          root = tree.getroot()
+
+          existing = set()
+
+          for item in root.findall("string"):
+              name = item.get("name")
+              if name:
+                  existing.add(name)
+
+          required = {
+              "app_name": "Raya",
+              "accessibility_service_summary": "Raya Accessibility Service",
+              "accessibility_service_desc": "Allows Raya to control Android apps using accessibility actions."
+          }
+
+          for name, value in required.items():
+              if name not in existing:
+                  element = ET.Element("string")
+                  element.set("name", name)
+                  element.text = value
+                  root.append(element)
+
+          tree.write(path, encoding="utf-8", xml_declaration=True)
+          PY
+
+          fi
+
+          echo "Final strings.xml:"
+          cat "$STRINGS"
+
+      # 11. Show important project files before build
+      - name: Verify Android project
+        run: |
+          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+
+          echo "===== SETTINGS ====="
+          cat "$PROJECT_DIR/settings.gradle.kts"
+
+          echo "===== ROOT BUILD ====="
+          cat "$PROJECT_DIR/build.gradle.kts"
+
+          echo "===== APP BUILD ====="
+          cat "$PROJECT_DIR/app/build.gradle.kts"
+
+          echo "===== MANIFEST ====="
+          cat "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+
+      # 12. Build APK
       - name: Build APK
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+
           cd "$PROJECT_DIR"
 
-          echo "Building Raya..."
-          gradle clean assembleDebug
+          echo "================================"
+          echo "Building Raya APK"
+          echo "================================"
 
+          gradle --no-daemon clean assembleDebug --stacktrace
+
+      # 13. Upload APK
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v6
         with:
           name: Raya-debug-APK
           path: raya-project/**/build/outputs/apk/**/*.apk
+          if-no-files-found: error
