@@ -278,7 +278,15 @@ jobs:
 
           echo "JVM target fixed:"
           tail -30 "$APP_BUILD"
-      # 12. Build APK
+           - name: Fix Compose Compiler compatibility
+        run: |
+          PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+          APP_BUILD="$PROJECT_DIR/app/build.gradle.kts"
+
+          sed -i 's/kotlinCompilerExtensionVersion[[:space:]]*=[[:space:]]*"[^"]*"/kotlinCompilerExtensionVersion = "1.5.14"/g' "$APP_BUILD"
+
+          echo "Compose compiler configuration:"
+          grep -n "kotlinCompilerExtensionVersion" "$APP_BUILD" || true # 12. Build APK
       - name: Build APK
         run: |
           PROJECT_DIR=$(find raya-project -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
