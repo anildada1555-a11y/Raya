@@ -12,49 +12,39 @@ jobs:
 
     steps:
 
-      # ==========================================
-      # 1. CHECKOUT
-      # ==========================================
-
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v6
 
-
-      # ==========================================
-      # 2. JAVA 17
-      # ==========================================
-
+      # 2. Java 17
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-
-      # ==========================================
-      # 3. EXTRACT RAYA ZIP
-      # ==========================================
-
-      - name: Extract Raya project
+      # 3. Extract NEW Raya project
+      - name: Extract new Raya project
+        shell: bash
         run: |
           set -e
 
+          rm -rf raya-project
           mkdir -p raya-project
 
-          unzip -o "Raya-Android-Voice-Assistant.zip" -d raya-project
+          if [ ! -f "Raya-Android-Voice-Assistant-FULL-NEW.zip" ]; then
+            echo "ERROR: New Raya ZIP not found"
+            exit 1
+          fi
 
-          echo "=========================================="
-          echo "EXTRACTED FILES"
-          echo "=========================================="
+          unzip -q "Raya-Android-Voice-Assistant-FULL-NEW.zip" -d raya-project
 
-          find raya-project -maxdepth 6 -type f | sort
+          echo "===== EXTRACTED FILES ====="
+          find raya-project -maxdepth 8 -type f | sort
 
-
-      # ==========================================
-      # 4. FIND ANDROID PROJECT
-      # ==========================================
-
+      # 4. Locate Android project
       - name: Locate Android project
+        shell: bash
         run: |
           set -e
 
@@ -64,414 +54,118 @@ jobs:
             -print -quit | xargs dirname)
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: settings.gradle.kts not found"
+            PROJECT_DIR=$(find raya-project \
+              -name "settings.gradle" \
+              -type f \
+              -print -quit | xargs dirname)
+          fi
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android project not found"
+            echo "Searching for Gradle files:"
+            find raya-project -type f \( \
+              -name "build.gradle" \
+              -o -name "build.gradle.kts" \
+              -o -name "settings.gradle" \
+              -o -name "settings.gradle.kts" \
+            \) -print
             exit 1
           fi
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "=========================================="
-          echo "ANDROID PROJECT"
-          echo "=========================================="
-
+          echo "===== ANDROID PROJECT ====="
           echo "$PROJECT_DIR"
 
+      # 5. Show project structure
+      - name: Verify new project
+        shell: bash
+        run: |
+          set -e
 
-      # ==========================================
-      # 5. GRADLE 8.10
-      # ==========================================
+          echo "===== PROJECT FILES ====="
+          find "$PROJECT_DIR" -maxdepth 6 -type f | sort
 
+          echo "===== GRADLE FILES ====="
+          ls -la "$PROJECT_DIR"
+
+          if [ -d "$PROJECT_DIR/app" ]; then
+            echo "APP MODULE FOUND"
+          else
+            echo "ERROR: app module not found"
+            exit 1
+          fi
+
+      # 6. Gradle 8.10
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.10'
 
-
-      # ==========================================
-      # 6. GRADLE VERSION CATALOG
-      # ==========================================
-
-      - name: Create Gradle version catalog
-        run: |
-          set -e
-
-          mkdir -p "$PROJECT_DIR/gradle"
-
-          cat > "$PROJECT_DIR/gradle/libs.versions.toml" <<'EOF'
-          [versions]
-          agp = "8.7.3"
-          kotlin = "1.9.24"
-
-          [plugins]
-          android-application = { id = "com.android.application", version.ref = "agp" }
-          kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
-          EOF
-
-          echo "=========================================="
-          echo "libs.versions.toml"
-          echo "=========================================="
-
-          cat "$PROJECT_DIR/gradle/libs.versions.toml"
-
-
-      # ==========================================
-      # 7. GRADLE PROPERTIES
-      # ==========================================
-
+      # 7. Gradle memory
       - name: Configure Gradle
+        shell: bash
         run: |
           set -e
 
           cat > "$PROJECT_DIR/gradle.properties" <<'EOF'
-          android.useAndroidX=true
-          android.enableJetifier=true
-
           org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8
-
+          org.gradle.daemon=false
           org.gradle.parallel=false
           org.gradle.workers.max=2
-
-          kotlin.daemon.jvmargs=-Xmx1024m
+          android.useAndroidX=true
+          android.enableJetifier=true
           EOF
 
-          echo "=========================================="
-          echo "gradle.properties"
-          echo "=========================================="
-
-          cat "$PROJECT_DIR/gradle.properties"
-
-
-      # ==========================================
-      # 8. FIX ANDROID MANIFEST
-      # ==========================================
-
-      - name: Fix AndroidManifest
-        run: |
-          set -e
-
-          MANIFEST="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-
-          if [ ! -f "$MANIFEST" ]; then
-            echo "ERROR: AndroidManifest.xml not found"
-            exit 1
-          fi
-
-          sed -i 's/package="com\.raya\.assistant"//g' "$MANIFEST"
-
-          echo "=========================================="
-          echo "AndroidManifest.xml"
-          echo "=========================================="
-
-          cat "$MANIFEST"
-
-
-      # ==========================================
-      # 9. CREATE ANDROID RESOURCES
-      # ==========================================
-
-      - name: Create Android resources
-        run: |
-          set -e
-
-          RES="$PROJECT_DIR/app/src/main/res"
-
-          mkdir -p "$RES/values"
-          mkdir -p "$RES/mipmap"
-
-
-          # --------------------------------------
-          # strings.xml
-          # --------------------------------------
-
-          cat > "$RES/values/strings.xml" <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-
-          <resources>
-
-              <string name="app_name">Raya</string>
-
-              <string name="accessibility_service_summary">
-                  Raya Accessibility Service
-              </string>
-
-              <string name="accessibility_service_desc">
-                  Allows Raya to control Android apps using accessibility actions.
-              </string>
-
-          </resources>
-          EOF
-
-
-          # --------------------------------------
-          # styles.xml
-          # --------------------------------------
-
-          cat > "$RES/values/styles.xml" <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-
-          <resources>
-
-              <style
-                  name="Theme.RayaVoiceAssistant"
-                  parent="android:style/Theme.Material.Light.NoActionBar">
-
-                  <item name="android:fontFamily">sans</item>
-                  <item name="android:windowLightStatusBar">true</item>
-                  <item name="android:colorAccent">#6750A4</item>
-
-              </style>
-
-          </resources>
-          EOF
-
-
-          # --------------------------------------
-          # launcher icon
-          # --------------------------------------
-
-          cat > "$RES/mipmap/ic_launcher.xml" <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-
-          <vector
-              xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="108dp"
-              android:height="108dp"
-              android:viewportWidth="108"
-              android:viewportHeight="108">
-
-              <path
-                  android:fillColor="#6750A4"
-                  android:pathData="M54,8 A46,46 0,1 0,54 100 A46,46 0,1 0,54 8" />
-
-              <path
-                  android:fillColor="#FFFFFF"
-                  android:pathData="M42,38 L42,70 L72,54 Z" />
-
-          </vector>
-          EOF
-
-
-          cp "$RES/mipmap/ic_launcher.xml" \
-             "$RES/mipmap/ic_launcher_round.xml"
-
-
-          echo "=========================================="
-          echo "ANDROID RESOURCES CREATED"
-          echo "=========================================="
-
-          find "$RES" -maxdepth 3 -type f | sort
-
-
-      # ==========================================
-      # 10. FIX JVM TARGET
-      # ==========================================
-
-      - name: Fix JVM target compatibility
-        run: |
-          set -e
-
-          APP_BUILD="$PROJECT_DIR/app/build.gradle.kts"
-
-          cat >> "$APP_BUILD" <<'EOF'
-
-          // ==========================================
-          // Raya JVM compatibility
-          // ==========================================
-
-          android {
-
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
-
-          }
-
-          EOF
-
-          echo "=========================================="
-          echo "JVM CONFIGURATION"
-          echo "=========================================="
-
-          tail -60 "$APP_BUILD"
-
-
-      # ==========================================
-      # 11. FIX COMPOSE COMPILER
-      # ==========================================
-
-      - name: Fix Compose Compiler compatibility
-        run: |
-          set -e
-
-          APP_BUILD="$PROJECT_DIR/app/build.gradle.kts"
-
-          echo "=========================================="
-          echo "SEARCHING COMPOSE COMPILER"
-          echo "=========================================="
-
-          grep -n \
-            "kotlinCompilerExtensionVersion" \
-            "$APP_BUILD" || true
-
-
-          # Replace old Compose compiler version
-          sed -i \
-            's/kotlinCompilerExtensionVersion[[:space:]]*=[[:space:]]*"[^"]*"/kotlinCompilerExtensionVersion = "1.5.14"/g' \
-            "$APP_BUILD"
-
-
-          # Add Compose compiler configuration
-          cat >> "$APP_BUILD" <<'EOF'
-
-          // ==========================================
-          // Raya Compose Compiler compatibility
-          // Kotlin 1.9.24
-          // Compose Compiler 1.5.14
-          // ==========================================
-
-          android {
-
-              composeOptions {
-                  kotlinCompilerExtensionVersion = "1.5.14"
-              }
-
-          }
-
-          EOF
-
-
-          echo "=========================================="
-          echo "COMPOSE COMPILER CONFIGURATION"
-          echo "=========================================="
-
-          grep -n \
-            "kotlinCompilerExtensionVersion" \
-            "$APP_BUILD" || true
-
-
-      # ==========================================
-      # 12. VERIFY PROJECT
-      # ==========================================
-
-      - name: Verify Android project
-        run: |
-          set -e
-
-          echo "=========================================="
-          echo "PROJECT DIRECTORY"
-          echo "=========================================="
-
-          echo "$PROJECT_DIR"
-
-
-          echo ""
-          echo "=========================================="
-          echo "PROJECT FILES"
-          echo "=========================================="
-
-          find "$PROJECT_DIR" \
-            -maxdepth 4 \
-            -type f \
-            | sort
-
-
-          echo ""
-          echo "=========================================="
-          echo "SETTINGS.GRADLE.KTS"
-          echo "=========================================="
-
-          cat "$PROJECT_DIR/settings.gradle.kts"
-
-
-          echo ""
-          echo "=========================================="
-          echo "APP BUILD.GRADLE.KTS"
-          echo "=========================================="
-
-          cat "$PROJECT_DIR/app/build.gradle.kts"
-
-
-      # ==========================================
-      # 13. BUILD APK
-      # ==========================================
-
+      # 8. Build APK
       - name: Build APK
+        shell: bash
         run: |
           set -e
 
           cd "$PROJECT_DIR"
 
-          echo "=========================================="
-          echo "GRADLE VERSION"
-          echo "=========================================="
+          echo "===== BUILDING RAYA ====="
 
-          gradle --version
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew clean assembleDebug --stacktrace
+          else
+            gradle clean assembleDebug --stacktrace
+          fi
 
-
-          echo ""
-          echo "=========================================="
-          echo "BUILDING RAYA APK"
-          echo "=========================================="
-
-
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            clean \
-            assembleDebug
-
-
-      # ==========================================
-      # 14. CHECK APK
-      # ==========================================
-
-      - name: Check APK
+      # 9. Find APK
+      - name: Find APK
+        shell: bash
         run: |
           set -e
 
-          echo "=========================================="
-          echo "SEARCHING FOR APK"
-          echo "=========================================="
+          echo "===== APK FILES ====="
 
-          find "$PROJECT_DIR/app/build/outputs/apk" \
+          find "$PROJECT_DIR" \
             -type f \
+            -name "*.apk" \
             -print
 
-
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk/debug" \
-            -name "*.apk" \
+          APK=$(find "$PROJECT_DIR" \
             -type f \
+            -name "*-debug.apk" \
             -print -quit)
 
-
           if [ -z "$APK" ]; then
-            echo ""
-            echo "ERROR: APK WAS NOT CREATED"
+            echo "ERROR: APK was not created"
             exit 1
           fi
 
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
-          echo ""
-          echo "=========================================="
-          echo "APK CREATED SUCCESSFULLY"
-          echo "=========================================="
-
+          echo "APK FOUND:"
           echo "$APK"
 
-
-      # ==========================================
-      # 15. UPLOAD APK
-      # ==========================================
-
-      - name: Upload APK
+      # 10. Upload APK
+      - name: Upload Raya APK
         uses: actions/upload-artifact@v6
         with:
-          name: Raya-Debug-APK
-          path: |
-            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error              
+          name: Raya-debug-apk
+          path: ${{ env.APK_PATH }}
+          if-no-files-found: error
